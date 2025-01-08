@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -45,6 +46,23 @@ func main() {
 	}()
 
 	gamelogic.PrintServerHelp()
+
+	_, _, err = pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		fmt.Sprintf("%s.*", routing.GameLogSlug),
+		pubsub.Durable,
+	)
+	if err != nil {
+		log.Fatalf(
+			"Failed to declare and bind to %s@%s: %v\n",
+			routing.ExchangePerilTopic,
+			routing.GameLogSlug,
+			err,
+		)
+		return
+	}
 
 	for {
 		input := gamelogic.GetInput()
