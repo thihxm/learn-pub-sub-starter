@@ -41,6 +41,58 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	return nil
 }
 
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T),
+) error {
+	ch, queue, err := DeclareAndBind(
+		conn,
+		exchange,
+		queueName,
+		key,
+		simpleQueueType,
+	)
+	if err != nil {
+		log.Printf(
+			"Failed to declare and bind to %s@%s: %v\n",
+			exchange,
+			key,
+			err,
+		)
+		return err
+	}
+
+	deliveryChan, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
+	if err != nil {
+		log.Printf("Failed to consume messages from queue %s: %v\n", queue.Name, err)
+		return err
+	}
+
+	go func() {
+		for delivery := range deliveryChan {
+			var val T
+			err := json.Unmarshal(delivery.Body, &val)
+			if err != nil {
+				log.Printf("Failed to unmarshal JSON: %v\n", err)
+				continue
+			}
+
+			handler(val)
+
+			err = delivery.Ack(false)
+			if err != nil {
+				log.Printf("Failed to ack message: %v\n", err)
+			}
+		}
+	}()
+
+	return nil
+}
+
 func DeclareAndBind(
 	conn *amqp.Connection,
 	exchange,
