@@ -35,16 +35,21 @@ func main() {
 		log.Fatalln("Failed to declare and bind queue to exchange:", err)
 		return
 	}
-	// messagesChan, err := ch.Consume(queue.Name, "", true, false, false, false, nil)
-	// if err != nil {
-	// 	log.Fatalln("Failed to consume messages from queue:", err)
-	// 	return
-	// }
-
-	// message := <-messagesChan
-	// log.Printf("Received message: %s\n", message.Body)
 
 	gameState := gamelogic.NewGameState(username)
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilDirect,
+		fmt.Sprintf("%s.%s", routing.PauseKey, username),
+		routing.PauseKey,
+		pubsub.Transient,
+		handlerPause(gameState),
+	)
+	if err != nil {
+		log.Fatalln("Failed to subscribe to JSON:", err)
+		return
+	}
 
 	for {
 		input := gamelogic.GetInput()
@@ -76,5 +81,12 @@ func main() {
 			gamelogic.PrintQuit()
 			return
 		}
+	}
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
 	}
 }
