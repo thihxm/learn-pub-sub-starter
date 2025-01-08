@@ -24,15 +24,16 @@ func main() {
 	}
 	defer conn.Close()
 
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalln("Failed to open a channel:", err)
+		return
+	}
+	defer ch.Close()
+
 	username, err := gamelogic.ClientWelcome()
 	if err != nil {
 		log.Fatalln("Failed to get username:", err)
-		return
-	}
-
-	_, _, err = pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, fmt.Sprintf("%s.%s", routing.PauseKey, username), routing.PauseKey, pubsub.Transient)
-	if err != nil {
-		log.Fatalln("Failed to declare and bind queue to exchange:", err)
 		return
 	}
 
@@ -47,7 +48,20 @@ func main() {
 		handlerPause(gameState),
 	)
 	if err != nil {
-		log.Fatalln("Failed to subscribe to JSON:", err)
+		log.Fatalln("Failed to subscribe to Pause messages:", err)
+		return
+	}
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username),
+		fmt.Sprintf("%s.*", routing.ArmyMovesPrefix),
+		pubsub.Transient,
+		handlerMove(gameState),
+	)
+	if err != nil {
+		log.Fatalln("Failed to subscribe to Move messages:", err)
 		return
 	}
 
@@ -67,10 +81,20 @@ func main() {
 				fmt.Println(err)
 			}
 		case "move":
-			_, err := gameState.CommandMove(input)
+			move, err := gameState.CommandMove(input)
 			if err != nil {
 				fmt.Println(err)
 			}
+			err = pubsub.PublishJSON(
+				ch,
+				routing.ExchangePerilTopic,
+				fmt.Sprintf("%s.%s", routing.ArmyMovesPrefix, username),
+				move,
+			)
+			if err != nil {
+				fmt.Println("Failed to publish move:", err)
+			}
+			fmt.Printf("Published move of %d unit(s) to %s\n", len(move.Units), move.ToLocation)
 		case "status":
 			gameState.CommandStatus()
 		case "help":
@@ -88,5 +112,12 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
 	return func(ps routing.PlayingState) {
 		defer fmt.Print("> ")
 		gs.HandlePause(ps)
+	}
+}
+
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(move gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		gs.HandleMove(move)
 	}
 }
