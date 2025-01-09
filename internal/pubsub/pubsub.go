@@ -25,6 +25,37 @@ const (
 	NackDiscard
 )
 
+func publish[T any](
+	ch *amqp.Channel,
+	exchange,
+	key string,
+	val T,
+	marshaller func(T) ([]byte, error),
+) error {
+	bytes, err := marshaller(val)
+	if err != nil {
+		log.Println("Failed to marshal data:", err)
+		return err
+	}
+	err = ch.PublishWithContext(
+		context.Background(),
+		exchange,
+		key,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        bytes,
+		},
+	)
+	if err != nil {
+		log.Printf("Failed to publish message to %s@%s: %v\n", exchange, key, err)
+		return err
+	}
+
+	return nil
+}
+
 func subscribe[T any](
 	conn *amqp.Connection,
 	exchange,
@@ -90,29 +121,21 @@ func subscribe[T any](
 }
 
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
-	bytes, err := json.Marshal(val)
-	if err != nil {
-		log.Println("Failed to marshal JSON:", err)
-		return err
-	}
-
-	err = ch.PublishWithContext(
-		context.Background(),
+	return publish(
+		ch,
 		exchange,
 		key,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        bytes,
+		val,
+		func(val T) ([]byte, error) {
+			bytes, err := json.Marshal(val)
+			if err != nil {
+				log.Println("Failed to marshal JSON:", err)
+				return nil, err
+			}
+
+			return bytes, nil
 		},
 	)
-	if err != nil {
-		log.Printf("Failed to publish message to %s@%s: %v\n", exchange, key, err)
-		return err
-	}
-
-	return nil
 }
 
 func SubscribeJSON[T any](
@@ -142,30 +165,22 @@ func SubscribeJSON[T any](
 }
 
 func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(val); err != nil {
-		log.Println("Failed to encode gob:", err)
-		return err
-	}
-
-	err := ch.PublishWithContext(
-		context.Background(),
+	return publish(
+		ch,
 		exchange,
 		key,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "application/gob",
-			Body:        buf.Bytes(),
+		val,
+		func(val T) ([]byte, error) {
+			var buf bytes.Buffer
+			enc := gob.NewEncoder(&buf)
+			if err := enc.Encode(val); err != nil {
+				log.Println("Failed to encode gob:", err)
+				return nil, err
+			}
+
+			return buf.Bytes(), nil
 		},
 	)
-	if err != nil {
-		log.Printf("Failed to publish message to %s@%s: %v\n", exchange, key, err)
-		return err
-	}
-
-	return nil
 }
 
 func SubscribeGob[T any](
