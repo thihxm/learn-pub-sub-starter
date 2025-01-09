@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -171,10 +172,10 @@ func (cfg *apiConfig) handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMo
 	}
 }
 
-func (cfg *apiConfig) handlerWar(ga *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+func (cfg *apiConfig) handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
 	return func(recognition gamelogic.RecognitionOfWar) pubsub.AckType {
 		defer fmt.Print("> ")
-		outcome, _, _ := ga.HandleWar(recognition)
+		outcome, winner, loser := gs.HandleWar(recognition)
 
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
@@ -182,6 +183,26 @@ func (cfg *apiConfig) handlerWar(ga *gamelogic.GameState) func(gamelogic.Recogni
 		case gamelogic.WarOutcomeNoUnits:
 			return pubsub.NackDiscard
 		case gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon, gamelogic.WarOutcomeDraw:
+			message := fmt.Sprintf("%s won a war against %s", winner, loser)
+			if outcome == gamelogic.WarOutcomeDraw {
+				message = fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser)
+			}
+
+			err := pubsub.PublishGob(
+				cfg.ch,
+				routing.ExchangePerilTopic,
+				fmt.Sprintf("%s.%s", routing.GameLogSlug, recognition.Attacker.Username),
+				routing.GameLog{
+					CurrentTime: time.Now(),
+					Message:     message,
+					Username:    gs.GetUsername(),
+				},
+			)
+			if err != nil {
+				log.Println("Failed to publish game log:", err)
+				return pubsub.NackRequeue
+			}
+			fmt.Println("Published game log")
 			return pubsub.Ack
 		default:
 			fmt.Printf("Error: Unexpected war outcome -> %d", outcome)
