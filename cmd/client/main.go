@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -125,7 +126,33 @@ func main() {
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			fmt.Println("Spamming not allowed yet!")
+			if len(input) < 2 {
+				fmt.Println("Spam command requires a number of messages to send")
+				break
+			}
+			numOfMessages, err := strconv.Atoi(input[1])
+			if err != nil {
+				fmt.Println("Failed to parse number of messages to send")
+				break
+			}
+
+			for i := 0; i < numOfMessages; i++ {
+				err := pubsub.PublishGob(
+					cfg.ch,
+					routing.ExchangePerilTopic,
+					fmt.Sprintf("%s.%s", routing.GameLogSlug, username),
+					routing.GameLog{
+						CurrentTime: time.Now(),
+						Message:     gamelogic.GetMaliciousLog(),
+						Username:    username,
+					},
+				)
+				if err != nil {
+					fmt.Println("Failed to publish spam game log:", err)
+					break
+				}
+			}
+
 		case "quit":
 			gamelogic.PrintQuit()
 			return
