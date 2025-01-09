@@ -85,8 +85,7 @@ func SubscribeJSON[T any](
 	go func() {
 		for delivery := range deliveryChan {
 			var val T
-			err := json.Unmarshal(delivery.Body, &val)
-			if err != nil {
+			if err := json.Unmarshal(delivery.Body, &val); err != nil {
 				log.Printf("Failed to unmarshal JSON: %v\n", err)
 				continue
 			}
@@ -138,6 +137,71 @@ func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
 		log.Printf("Failed to publish message to %s@%s: %v\n", exchange, key, err)
 		return err
 	}
+
+	return nil
+}
+
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T) AckType,
+) error {
+	ch, queue, err := DeclareAndBind(
+		conn,
+		exchange,
+		queueName,
+		key,
+		simpleQueueType,
+	)
+	if err != nil {
+		log.Printf(
+			"Failed to declare and bind to %s@%s: %v\n",
+			exchange,
+			key,
+			err,
+		)
+		return err
+	}
+
+	deliveryChan, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
+	if err != nil {
+		log.Printf("Failed to consume messages from queue %s: %v\n", queue.Name, err)
+		return err
+	}
+
+	go func() {
+		for delivery := range deliveryChan {
+			buf := bytes.NewBuffer(delivery.Body)
+			dec := gob.NewDecoder(buf)
+			var val T
+			if err := dec.Decode(&val); err != nil {
+				log.Printf("Failed to decode gob: %v\n", err)
+				continue
+			}
+
+			ackType := handler(val)
+
+			switch ackType {
+			case Ack:
+				err = delivery.Ack(false)
+				log.Println("Acked message")
+			case NackRequeue:
+				err = delivery.Nack(false, true)
+				log.Println("Nacked and requeued message")
+			case NackDiscard:
+				err = delivery.Nack(false, false)
+				log.Println("Nacked and discarded message")
+			}
+
+			if err != nil {
+				log.Printf("Failed to ack message: %v\n", err)
+			}
+			fmt.Print("> ")
+		}
+	}()
 
 	return nil
 }

@@ -47,12 +47,13 @@ func main() {
 
 	gamelogic.PrintServerHelp()
 
-	_, _, err = pubsub.DeclareAndBind(
+	err = pubsub.SubscribeGob(
 		conn,
 		routing.ExchangePerilTopic,
 		routing.GameLogSlug,
 		fmt.Sprintf("%s.*", routing.GameLogSlug),
 		pubsub.Durable,
+		handlerGameLogs,
 	)
 	if err != nil {
 		log.Fatalf(
@@ -104,4 +105,14 @@ func main() {
 			gamelogic.PrintServerHelp()
 		}
 	}
+}
+
+func handlerGameLogs(gameLog routing.GameLog) pubsub.AckType {
+	defer fmt.Print("> ")
+	err := gamelogic.WriteLog(gameLog)
+	if err != nil {
+		log.Println("Failed to write game log:", err)
+		return pubsub.NackRequeue
+	}
+	return pubsub.Ack
 }

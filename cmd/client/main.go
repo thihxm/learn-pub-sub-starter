@@ -202,7 +202,6 @@ func (cfg *apiConfig) handlerWar(gs *gamelogic.GameState) func(gamelogic.Recogni
 				log.Println("Failed to publish game log:", err)
 				return pubsub.NackRequeue
 			}
-			fmt.Println("Published game log")
 			return pubsub.Ack
 		default:
 			fmt.Printf("Error: Unexpected war outcome -> %d", outcome)
