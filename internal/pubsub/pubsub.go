@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -105,6 +106,7 @@ func SubscribeJSON[T any](
 			if err != nil {
 				log.Printf("Failed to ack message: %v\n", err)
 			}
+			fmt.Print("> ")
 		}
 	}()
 
